@@ -93,7 +93,7 @@ The system monitors 7 GCP resource types:
 | **Executor** | Runs tests against Cloud Monitoring data, writes results | Custom orchestrator |
 | **Policy Watcher** | Listens for Firestore changes and dynamically updates schedules | Firestore snapshots |
 | **Health Tests** | Pluggable test implementations (metric threshold, error rate) | Plugin registry pattern |
-| **MCP Server** | Exposes health tools for LLM agents (Claude Code integration) | FastMCP + Cloud Run |
+| **MCP Server** | Exposes health tools for LLM agents via Model Context Protocol | FastMCP + Cloud Run |
 | **Traffic Simulator** | Generates test traffic to populate Cloud Monitoring metrics | Python script / Cloud Run Job |
 | **Firestore** | Stores policies, resources, test results, and health history | Google Firestore |
 | **Cloud Monitoring** | Source of truth for GCP service metrics | Google Cloud Monitoring API |

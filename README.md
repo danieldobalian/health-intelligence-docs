@@ -17,7 +17,7 @@ Semantic health monitoring for Google Cloud Platform resources. This system cont
 ### Key Capabilities
 
 - **On-demand test execution**: Run health tests immediately via `health test run --resource <id>`
-- **MCP server**: 8 tools for LLM agents (Claude Code) -- health overview, incident correlation, test explanations
+- **MCP server**: 8 tools for LLM agents -- health overview, incident correlation, test explanations
 - **Traffic simulation**: Automated traffic generation to populate Cloud Monitoring metrics
 - **GCP incident correlation**: Cross-reference GCP Service Health incidents with monitored resources
 

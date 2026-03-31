@@ -52,6 +52,19 @@ tests:
 
 A single resource can have **multiple policies** assigned via `policy_ids`. All tests from all assigned policies are evaluated.
 
+### Standard Policy Templates
+
+Standard policies are provided for all 7 supported resource types in `examples/policies/`:
+
+| Policy | Resource Type | Tests |
+|---|---|---|
+| `cloud-sql-standard.yaml` | `cloud_sql` | CPU, memory, disk, connections, replication lag |
+| `cloud-function-standard.yaml` | `cloud_function` | Execution latency P99, memory, active instances, error rate |
+| `gcs-standard.yaml` | `gcs_bucket` | API request latency P95, error rate |
+| `pubsub-standard.yaml` | `pubsub_subscription` | Oldest unacked age, undelivered count, push error rate |
+| `gce-standard.yaml` | `gce_instance` | CPU utilization, uptime, disk utilization |
+| `vertex-ai-endpoint-standard.yaml` | `vertex_ai_endpoint` | Prediction latency P95, error count, request volume |
+
 ## Test Plugin System
 
 Tests are implemented as plugins using a registry pattern:
@@ -68,10 +81,10 @@ Tests are implemented as plugins using a registry pattern:
    - Queries a single    - Calculates error
      metric and compares   rate as % of total
      against thresholds    requests
-   - Supports: Cloud     - Supports: Cloud
-     Run, Firestore,       Run, Cloud
-     Cloud Functions,      Functions
-     Cloud SQL
+   - Supports all 7      - Supports: Cloud
+     resource types        Run, Cloud Functions,
+                           GCS, Pub/Sub,
+                           Vertex AI
 ```
 
 ### MetricThresholdTest
@@ -79,6 +92,8 @@ Tests are implemented as plugins using a registry pattern:
 The most common test type. Fetches a single metric from Cloud Monitoring and compares it against warning and critical thresholds.
 
 **Supported aggregations**: mean, max, min, sum, count, p50, p95, p99
+
+**Supported resource types**: All 7 (cloud_run_service, cloud_function, cloud_sql, gcs_bucket, pubsub_subscription, gce_instance, vertex_ai_endpoint)
 
 **Evaluation logic**:
 ```
@@ -98,6 +113,8 @@ if threshold_operator == "less_than":
 ### ErrorRateTest
 
 Calculates error rate as a percentage of total requests using request count metrics with error filters.
+
+**Supported resource types**: cloud_run_service, cloud_function, gcs_bucket, pubsub_subscription, vertex_ai_endpoint
 
 ```
 total_requests = query(request_count_metric, window)
@@ -205,7 +222,7 @@ from health_monitor.health_tests.registry import register_test
 class LatencyPercentileTest(HealthTest):
     display_name = "Latency Percentile"
     description = "Check request latency at a given percentile"
-    supported_resource_types = ["cloud_run_service"]
+    supported_resource_types = ["cloud_run_service", "gcs_bucket", "vertex_ai_endpoint"]
 
     async def execute(self, resource, config):
         # Query metric, evaluate, return TestResult

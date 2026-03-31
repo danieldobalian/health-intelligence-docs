@@ -2,7 +2,21 @@
 
 ## What It Does
 
-Health Monitor provides **semantic health monitoring** for Google Cloud services. Instead of raw metric dashboards, it translates Cloud Monitoring data into actionable health states -- answering "is this service healthy?" rather than "what is the CPU at?"
+Health Monitor provides **semantic health monitoring** for Google Cloud Platform resources. Instead of raw metric dashboards, it translates Cloud Monitoring data into actionable health states -- answering "is this service healthy?" rather than "what is the CPU at?"
+
+### Supported Resources
+
+The system monitors 7 GCP resource types:
+
+| Resource Type | Enum Value | Metric Prefix |
+|---|---|---|
+| Cloud Run | `cloud_run_service` | `run.googleapis.com/*` |
+| Cloud Functions | `cloud_function` | `cloudfunctions.googleapis.com/*` |
+| Cloud SQL | `cloud_sql` | `cloudsql.googleapis.com/*` |
+| Cloud Storage | `gcs_bucket` | `storage.googleapis.com/*` |
+| Pub/Sub | `pubsub_subscription` | `pubsub.googleapis.com/*` |
+| Compute Engine | `gce_instance` | `compute.googleapis.com/*`, `agent.googleapis.com/*` |
+| Vertex AI | `vertex_ai_endpoint` | `aiplatform.googleapis.com/*` |
 
 ## Architecture at a Glance
 
@@ -10,6 +24,7 @@ Health Monitor provides **semantic health monitoring** for Google Cloud services
                         +---------------------+
                         |     CLI (Click)      |
                         |   health status ...  |
+                        |   health test run    |
                         +----------+----------+
                                    |
                                    v
@@ -17,6 +32,12 @@ Health Monitor provides **semantic health monitoring** for Google Cloud services
 |       Cloud Monitoring       |   |   |         Firestore            |
 |       (Metrics Source)       |   |   |  (Policies, Resources,       |
 |                              |   |   |   Results, History)          |
+| - run.googleapis.com         |   |   |                              |
+| - cloudsql.googleapis.com    |   |   |                              |
+| - storage.googleapis.com     |   |   |                              |
+| - pubsub.googleapis.com      |   |   |                              |
+| - compute.googleapis.com     |   |   |                              |
+| - aiplatform.googleapis.com  |   |   |                              |
 +-------------+----------------+   |   +-------------+----------------+
               |                    |                   |
               v                    v                   v
@@ -37,6 +58,29 @@ Health Monitor provides **semantic health monitoring** for Google Cloud services
                         |
                         v
                   Cloud Run (Hosting)
+
+        +---------------------------------------------+
+        |           MCP Server (FastMCP)              |
+        |                                             |
+        |  8 tools for LLM agents:                    |
+        |  - Health overview, resource status          |
+        |  - Test history, result explanations         |
+        |  - GCP incident queries + impact assessment  |
+        |                                             |
+        |  Transports: STDIO, streamable-HTTP         |
+        +---------------------------------------------+
+                        |
+                        v
+              Cloud Run (Separate Service)
+
+        +---------------------------------------------+
+        |         Traffic Simulator                    |
+        |                                             |
+        |  Generates test traffic to GCP resources    |
+        |  GCS, Pub/Sub, GCE, Cloud Run, Functions    |
+        |                                             |
+        |  Runs as Cloud Run Job on Cloud Scheduler   |
+        +---------------------------------------------+
 ```
 
 ## Component Breakdown
@@ -49,6 +93,8 @@ Health Monitor provides **semantic health monitoring** for Google Cloud services
 | **Executor** | Runs tests against Cloud Monitoring data, writes results | Custom orchestrator |
 | **Policy Watcher** | Listens for Firestore changes and dynamically updates schedules | Firestore snapshots |
 | **Health Tests** | Pluggable test implementations (metric threshold, error rate) | Plugin registry pattern |
+| **MCP Server** | Exposes health tools for LLM agents (Claude Code integration) | FastMCP + Cloud Run |
+| **Traffic Simulator** | Generates test traffic to populate Cloud Monitoring metrics | Python script / Cloud Run Job |
 | **Firestore** | Stores policies, resources, test results, and health history | Google Firestore |
 | **Cloud Monitoring** | Source of truth for GCP service metrics | Google Cloud Monitoring API |
 
@@ -64,6 +110,13 @@ Health Monitor provides **semantic health monitoring** for Google Cloud services
 7. Executor aggregates results --> computes HealthState (healthy/warning/unhealthy)
 8. Results + state written to Firestore
 9. User runs `health status overview` --> reads from Firestore, displays table
+
+On-demand path (bypasses scheduler):
+   User runs `health test run --resource <id>` --> Executor runs tests immediately
+   User runs `health test explain <test-id>` --> reads latest result from Firestore
+
+MCP path (LLM agents):
+   Agent calls MCP tool --> reads from Firestore / Service Health API --> returns JSON
 ```
 
 ## Data Model
@@ -98,11 +151,11 @@ health/
         status.py         # health status overview | resource <id>
         resource.py       # health resource list | get | create | delete
         policy.py         # health policy list | get | create | validate
-        test.py           # health test list | history | validate
+        test.py           # health test list | run | history | explain | validate
     core/
       config.py           # Pydantic settings (env vars)
       models.py           # All domain models (Policy, Resource, TestResult, ...)
-      enums.py            # HealthState, TestStatus enums
+      enums.py            # HealthState, TestStatus, ResourceType enums
     engine/
       app.py              # FastAPI app + lifespan (startup/shutdown)
       executor.py         # Orchestrates test execution per resource
@@ -114,11 +167,21 @@ health/
       metric_threshold.py # MetricThresholdTest implementation
       error_rate.py       # ErrorRateTest implementation
     monitoring/
-      client.py           # Cloud Monitoring API wrapper
+      client.py           # Cloud Monitoring API wrapper (7 resource types)
     storage/
       firestore_client.py # Firestore connection manager
       repositories/       # CRUD for policies, resources, results
-  terraform/              # Infrastructure-as-code
-  examples/               # Sample YAML configs
+    mcp/                  # MCP server for LLM agents
+      server.py           # FastMCP server with 8 tools
+      service_health_client.py  # GCP Service Health API wrapper
+  scripts/
+    simulate_traffic.py   # Traffic generator for test resources
+    deploy_mcp.sh         # MCP server deployment script
+    deploy.sh             # Health engine deployment
+  terraform/              # Infrastructure-as-code (engine + test resources)
+    traffic-simulator/    # Cloud Run Job + Cloud Scheduler for traffic
+  examples/policies/      # Standard policy templates (7 resource types)
+  deploy/                 # Sample resource/policy configs + Dockerfiles
+    mcp-server/           # MCP server Dockerfile
   docs/                   # Dev docs (deployment, testing)
 ```

@@ -37,8 +37,10 @@ health [--project/-p PROJECT] [--format/-f table|json] [--verbose/-v]
   |     +-- export <id>       Export policy as YAML
   |
   +-- test
+        +-- run               Run tests on demand (--resource, --test-id)
         +-- list              Show available test types
         +-- history           Show test execution history (--resource, --test-id)
+        +-- explain <id>      Detailed explanation of a test result (--resource)
         +-- validate --file   Validate test configuration
 ```
 
@@ -51,17 +53,19 @@ $ health status overview
 
                     Health Monitor - Status Overview
 
-  Summary: 3 Healthy | 1 Warning | 0 Unhealthy | 1 Unknown
+  Summary: 5 Healthy | 1 Warning | 0 Unhealthy | 1 Unknown
 
-  ┌──────────────────┬──────────────────┬───────────┬─────────────────────┬───────┐
-  │ Resource ID      │ Type             │ Status    │ Last Check          │ Tests │
-  ├──────────────────┼──────────────────┼───────────┼─────────────────────┼───────┤
-  │ api-gateway      │ cloud_run_service│ healthy   │ 2025-01-15 14:32:01 │ 4/4   │
-  │ user-service     │ cloud_run_service│ healthy   │ 2025-01-15 14:31:58 │ 3/3   │
-  │ payment-service  │ cloud_run_service│ warning   │ 2025-01-15 14:32:05 │ 2/4   │
-  │ auth-service     │ cloud_run_service│ healthy   │ 2025-01-15 14:31:55 │ 4/4   │
-  │ batch-processor  │ cloud_run_service│ unknown   │ --                  │ 0/0   │
-  └──────────────────┴──────────────────┴───────────┴─────────────────────┴───────┘
+  ┌──────────────────────┬─────────────────────┬───────────┬─────────────────────┬───────┐
+  │ Resource ID          │ Type                │ Status    │ Last Check          │ Tests │
+  ├──────────────────────┼─────────────────────┼───────────┼─────────────────────┼───────┤
+  │ api-gateway          │ cloud_run_service   │ healthy   │ 2025-01-15 14:32:01 │ 4/4   │
+  │ payment-service      │ cloud_run_service   │ warning   │ 2025-01-15 14:32:05 │ 2/4   │
+  │ main-database        │ cloud_sql           │ healthy   │ 2025-01-15 14:31:58 │ 5/5   │
+  │ event-queue          │ pubsub_subscription │ healthy   │ 2025-01-15 14:32:03 │ 3/3   │
+  │ data-bucket          │ gcs_bucket          │ healthy   │ 2025-01-15 14:31:55 │ 2/2   │
+  │ web-server           │ gce_instance        │ healthy   │ 2025-01-15 14:32:08 │ 3/3   │
+  │ ml-endpoint          │ vertex_ai_endpoint  │ unknown   │ --                  │ 0/0   │
+  └──────────────────────┴─────────────────────┴───────────┴─────────────────────┴───────┘
 ```
 
 Status values are colorized: green for healthy, yellow for warning, red for unhealthy, dim for unknown.
@@ -214,6 +218,79 @@ $ health status overview --format json
   ]
 }
 ```
+
+### 9. Run tests on demand
+
+```
+$ health test run --resource sample-health-service
+
+  Running tests for sample-health-service...
+
+  Test Results for sample-health-service
+  ╭────────────────────┬──────────────────┬─────────┬────────┬──────────┬───────────┬──────────╮
+  │ Test ID            │ Type             │ Status  │ Value  │ Warning  │ Critical  │ Duration │
+  ├────────────────────┼──────────────────┼─────────┼────────┼──────────┼───────────┼──────────┤
+  │ cpu-utilization    │ metric_threshold │ PASSING │ 0.12   │ 0.70     │ 0.90      │ 245ms    │
+  │ memory-utilization │ metric_threshold │ PASSING │ 0.45   │ 0.70     │ 0.90      │ 230ms    │
+  │ request-latency    │ metric_threshold │ PASSING │ 0.08s  │ 1.00s    │ 5.00s     │ 215ms    │
+  │ error-rate         │ error_rate       │ PASSING │ 0.0%   │ 1.0%     │ 5.0%      │ 310ms    │
+  ╰────────────────────┴──────────────────┴─────────┴────────┴──────────┴───────────┴──────────╯
+
+  4/4 tests passing
+
+$ health test run --resource sample-health-function --test-id memory-usage
+
+  Running tests for sample-health-function...
+
+  Test Results for sample-health-function
+  ╭──────────────┬──────────────────┬─────────┬────────┬──────────┬───────────┬──────────╮
+  │ Test ID      │ Type             │ Status  │ Value  │ Warning  │ Critical  │ Duration │
+  ├──────────────┼──────────────────┼─────────┼────────┼──────────┼───────────┼──────────┤
+  │ memory-usage │ metric_threshold │ WARNING │ 180MB  │ 150MB    │ 230MB     │ 220ms    │
+  ╰──────────────┴──────────────────┴─────────┴────────┴──────────┴───────────┴──────────╯
+
+  0/1 tests passing
+```
+
+Run all tests or a specific test for any monitored resource without waiting for the scheduler.
+
+### 10. Explain a test result
+
+```
+$ health test explain memory-utilization --resource health-engine-service
+
+  ╭── Test Result ──────────────────────────────────────╮
+  │ Result ID: metric-threshold-abc123                  │
+  │ Test: memory-utilization (metric_threshold)         │
+  │ Resource: health-engine-service                     │
+  │ Status: WARNING                                     │
+  │ Value: 0.75                                         │
+  │ Warning Threshold: 0.70                             │
+  │ Critical Threshold: 0.90                            │
+  │ Unit: ratio                                         │
+  ╰─────────────────────────────────────────────────────╯
+
+  ╭── Execution ────────────────────────────────────────╮
+  │ Started: 2025-01-15 14:32:05 PST                    │
+  │ Completed: 2025-01-15 14:32:05 PST                  │
+  │ Duration: 230ms                                     │
+  │ Window Start: 2025-01-15 14:27:05 PST               │
+  │ Window End: 2025-01-15 14:32:05 PST                 │
+  ╰─────────────────────────────────────────────────────╯
+
+  ╭── Explanation ──────────────────────────────────────╮
+  │ Summary: Memory utilization at 75%, above warning   │
+  │   threshold of 70%                                  │
+  │                                                     │
+  │ Severity: warning                                   │
+  │                                                     │
+  │ Recommendation:                                     │
+  │   Consider increasing memory allocation or          │
+  │   investigating memory leaks                        │
+  ╰─────────────────────────────────────────────────────╯
+```
+
+Shows the full result including metric value, thresholds, execution timing, and an explanation with recommendations if the test is not passing.
 
 ## Output Formatting
 
